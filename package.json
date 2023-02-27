@@ -1,0 +1,25 @@
+{
+  "name": "cache-sqlite-lru-ttl",
+  "version": "1.0.0",
+  "author": "Jan Kelin",
+  "main": "dist/index.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "vitest run && tsc --project tsconfig.build.json",
+    "test": "vitest"
+  },
+  "typings": "dist/index.d.ts",
+  "dependencies": {
+    "better-sqlite3": "^8.1.0",
+    "cbor": "^8.1.0",
+    "debounce": "^1.2.1",
+    "zod": "^3.20.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.3",
+    "@types/debounce": "^1.2.1",
+    "@vitest/coverage-c8": "^0.29.1",
+    "typescript": "^4.9.5",
+    "vitest": "^0.29.1"
+  }
+}
