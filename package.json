@@ -3,12 +3,17 @@
   "version": "1.0.0",
   "author": "Jan Kelin",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "license": "MIT",
-  "scripts": {
-    "build": "vitest run && tsc --project tsconfig.build.json",
-    "test": "vitest"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jkelin/cache-sqlite-lru-ttl"
   },
-  "typings": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "test": "vitest",
+    "prepublish": "vitest run && yarn build"
+  },
   "dependencies": {
     "better-sqlite3": "^8.1.0",
     "cbor": "^8.1.0",

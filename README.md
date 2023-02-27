@@ -1,13 +1,13 @@
-# Sqlite cache with LRU and TTL eviction
+# SQLite cache with LRU and TTL eviction
 
-Sqlite is perfect for high-performance local cache. It is perfectly viable for caching strings or files. Caching files in sqlite is generally faster than storing them in a filesystem. This library tries to have sane defaults and features:
+SQLite is perfect for high-performance local cache. It is perfectly viable for caching strings or files. Caching files in SQLite is generally faster than storing them in a filesystem. This library tries to have sane defaults and features:
 
 - TTL eviction mechanism which allows you to set maximum datetime to expire an item
 - LRU eviction mechanism that enforces that no more than `maxItems` will be cached based on least recent `get`
 - Optional value compression with gzip
 - Values encoded with [CBOR](https://cbor.io/) which is like JSON, but is binary and serializes `Buffer` and `Date`
-- Inspired by [node-cache-manager-sqlite](https://github.com/maxpert/node-cache-manager-sqlite) but with easier configuration, Typescript, LRU and compression
-- Make sure to call `await cache.close()` during graceful shutdown of your application to ensure sqlite is properly persisted to disk
+- Inspired by [node-cache-manager-sqlite](https://github.com/maxpert/node-cache-manager-sqlite) but with easier configuration, TypeScript, LRU and compression
+- Make sure to call `await cache.close()` during graceful shutdown of your application to ensure SQLite is properly persisted to disk
 
 ### Basic usage
 
