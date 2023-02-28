@@ -182,6 +182,22 @@ test("complex object", async () => {
   }
 });
 
+test("update key", async () => {
+  const cache = new SqliteCache({
+    database: ":memory:",
+  });
+
+  try {
+    await cache.set("foo", "bar");
+    assert.equal(await cache.get("foo"), "bar");
+
+    await cache.set("foo", "baz");
+    assert.equal(await cache.get("foo"), "baz");
+  } finally {
+    await cache.close();
+  }
+});
+
 test("file get set", async () => {
   const dbPath = join(tmpdir(), randomUUID() + ".db");
   const cache = new SqliteCache({
