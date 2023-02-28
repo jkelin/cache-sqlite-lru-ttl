@@ -1,5 +1,9 @@
 # SQLite cache with LRU and TTL eviction
 
+![coverage](https://img.shields.io/badge/coverage-97%25-green)
+![NPM](https://img.shields.io/npm/l/cache-sqlite-lru-ttl)
+[![npm version](https://badge.fury.io/js/cache-sqlite-lru-ttl.svg)](https://www.npmjs.com/package/cache-sqlite-lru-ttl)
+
 SQLite is perfect for high-performance local cache. It is perfectly viable for caching strings or files. Caching files in SQLite is generally faster than storing them in a filesystem. This library tries to have sane defaults and features:
 
 - TTL eviction mechanism which allows you to set maximum datetime to expire an item

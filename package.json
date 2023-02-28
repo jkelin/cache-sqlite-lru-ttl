@@ -4,6 +4,12 @@
   "author": "Jan Kelin",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "keywords": [
+    "cache",
+    "sqlite",
+    "lru",
+    "ttl"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
