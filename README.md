@@ -4,7 +4,7 @@
 ![NPM](https://img.shields.io/npm/l/cache-sqlite-lru-ttl)
 [![npm version](https://badge.fury.io/js/cache-sqlite-lru-ttl.svg)](https://www.npmjs.com/package/cache-sqlite-lru-ttl)
 
-SQLite is perfect for high-performance local cache. It is perfectly viable for caching strings or files. Caching files in SQLite is generally faster than storing them in a filesystem. This library tries to have sane defaults and features:
+SQLite is great for high-performance local cache. This library is perfectly viable for caching strings, objects or whole files. Caching files in SQLite is generally faster than storing them in a filesystem. This library tries to have sane defaults and features:
 
 - TTL eviction mechanism which allows you to set maximum datetime to expire an item
 - LRU eviction mechanism that enforces that no more than `maxItems` will be cached based on least recent `get`
@@ -39,12 +39,17 @@ SQLite is perfect for high-performance local cache. It is perfectly viable for c
     database: './cache.db',
   });
 
+  await cache.set('obj', {
+    a: 5,
+    b: true,
+    c: new Date(), // you can store dates because CBOR
+    d: Buffer.from("hello world")
+  })
+
   await cache.set('bar', 'baz', {
     ttlMs: 60 * 1000, // short LRU for this item
     compress: false, // disable compression for this item
   })
-
-  await cache.get('bar') // 'baz' 🎉
 
   await cache.delete('bar') // delete 'bar'
 
