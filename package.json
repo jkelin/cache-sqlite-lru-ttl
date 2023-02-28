@@ -16,6 +16,7 @@
     "url": "https://github.com/jkelin/cache-sqlite-lru-ttl"
   },
   "scripts": {
+    "dev": "tsc --project tsconfig.build.json --watch",
     "build": "tsc --project tsconfig.build.json",
     "test": "vitest",
     "prepublish": "vitest run && yarn build"

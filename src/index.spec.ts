@@ -213,6 +213,29 @@ test("file get set", async () => {
   }
 });
 
+test("file close reopen", async () => {
+  const dbPath = join(tmpdir(), randomUUID() + ".db");
+  let cache = new SqliteCache({
+    database: dbPath,
+  });
+
+  try {
+    await cache.set("foo", "bar");
+    assert.equal(await cache.get("foo"), "bar");
+
+    await cache.close();
+
+    cache = new SqliteCache({
+      database: dbPath,
+    });
+
+    assert.equal(await cache.get("foo"), "bar");
+  } finally {
+    await cache.close();
+    await unlink(dbPath);
+  }
+});
+
 test("ttl", async () => {
   const dbPath = join(tmpdir(), randomUUID() + ".db");
   const cache = new SqliteCache({
