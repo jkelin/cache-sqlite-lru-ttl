@@ -31,6 +31,12 @@ export interface SqliteCacheConfiguration {
    * @default false
    */
   readonly compress?: boolean;
+
+  /**
+   * The name of the cache table in the database
+   * @default "cache"
+   */
+  readonly cacheTableName?: string;
 }
 
 const configurationSchema = z.object({
@@ -38,6 +44,7 @@ const configurationSchema = z.object({
   defaultTtlMs: z.number().positive().optional(),
   maxItems: z.number().positive().optional(),
   compress: z.boolean().optional().default(false),
+  cacheTableName: z.string().optional().default("cache")
 });
 
 async function initSqliteCache(configuration: SqliteCacheConfiguration) {
@@ -45,7 +52,7 @@ async function initSqliteCache(configuration: SqliteCacheConfiguration) {
 
   db.transaction(() => {
     db.prepare(
-      `CREATE TABLE IF NOT EXISTS cache (
+      `CREATE TABLE IF NOT EXISTS ${configuration.cacheTableName} (
         key TEXT PRIMARY KEY,
         value BLOB,
         expires INT,
@@ -54,33 +61,33 @@ async function initSqliteCache(configuration: SqliteCacheConfiguration) {
       )`
     ).run();
 
-    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS key ON cache (key)`).run();
-    db.prepare(`CREATE INDEX IF NOT EXISTS expires ON cache (expires)`).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS key ON ${configuration.cacheTableName} (key)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS expires ON ${configuration.cacheTableName} (expires)`).run();
     db.prepare(
-      `CREATE INDEX IF NOT EXISTS lastAccess ON cache (lastAccess)`
+      `CREATE INDEX IF NOT EXISTS lastAccess ON ${configuration.cacheTableName} (lastAccess)`
     ).run();
   })();
 
   return {
     db,
     getStatement: db.prepare(
-      `UPDATE OR IGNORE cache
+      `UPDATE OR IGNORE ${configuration.cacheTableName}
       SET lastAccess = @now
       WHERE key = @key AND (expires > @now OR expires IS NULL)
       RETURNING value, compressed`
     ),
     setStatement: db.prepare(
-      `INSERT OR REPLACE INTO cache
+      `INSERT OR REPLACE INTO ${configuration.cacheTableName}
       (key, value, expires, lastAccess, compressed) VALUES (@key, @value, @expires, @now, @compressed)`
     ),
-    deleteStatement: db.prepare(`DELETE FROM cache WHERE key = @key`),
-    clearStatement: db.prepare(`DELETE FROM cache`),
+    deleteStatement: db.prepare(`DELETE FROM ${configuration.cacheTableName} WHERE key = @key`),
+    clearStatement: db.prepare(`DELETE FROM ${configuration.cacheTableName}`),
     cleanupExpiredStatement: db.prepare(`
-      DELETE FROM cache WHERE expires < @now
+      DELETE FROM ${configuration.cacheTableName} WHERE expires < @now
     `),
     cleanupLruStatement: db.prepare(`
-      WITH lru AS (SELECT key FROM cache ORDER BY lastAccess DESC LIMIT -1 OFFSET @maxItems)
-      DELETE FROM cache WHERE key IN lru
+      WITH lru AS (SELECT key FROM ${configuration.cacheTableName} ORDER BY lastAccess DESC LIMIT -1 OFFSET @maxItems)
+      DELETE FROM ${configuration.cacheTableName} WHERE key IN lru
     `),
   };
 }
