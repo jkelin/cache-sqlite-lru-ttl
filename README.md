@@ -22,7 +22,8 @@ SQLite is great for high-performance local cache. This library is perfectly viab
     database: ':memory:', // or path to your database on disk
     defaultTtlMs: 1000 * 60 * 60, // optional TTL in milliseconds
     maxItems: 1000, // optional LRU
-    compress: true, // use gzip for values > 1024 bytes, can be smaller, but slower
+    compress: true, // use gzip for values > 1024 bytes, can be smaller, but slower,
+    cacheTableName: "cache1234" // Optional and will default to "cache"
   });
 
   await cache.set('bar', 'baz')
