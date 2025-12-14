@@ -31,6 +31,12 @@ export interface SqliteCacheConfiguration {
 	 * @default false
 	 */
 	readonly compress?: boolean;
+
+	/**
+	 * The name of the cache table in the database
+	 * @default "cache"
+	 */
+	readonly cacheTableName?: string;
 }
 
 const configurationSchema = z.object({
@@ -38,6 +44,7 @@ const configurationSchema = z.object({
 	defaultTtlMs: z.number().positive().optional(),
 	maxItems: z.number().positive().optional(),
 	compress: z.boolean().optional().default(false),
+	cacheTableName: z.string().optional().default("cache"),
 });
 
 // Define types for statement parameters and results
@@ -71,12 +78,18 @@ interface CleanupLruStatementParams {
 	maxItems: number;
 }
 
+function escapeIdentifier(identifier: string): string {
+	return `"${identifier.replace(/"/g, '""')}"`;
+}
+
 async function initSqliteCache(configuration: SqliteCacheConfiguration) {
 	const db = new Database(configuration.database, {});
+	const cacheTableName = configuration.cacheTableName ?? "cache";
+	const escapedTableName = escapeIdentifier(cacheTableName);
 
 	db.transaction(() => {
 		db.prepare(
-			`CREATE TABLE IF NOT EXISTS cache (
+			`CREATE TABLE IF NOT EXISTS ${escapedTableName} (
         key TEXT PRIMARY KEY,
         value BLOB,
         expires INT,
@@ -85,35 +98,35 @@ async function initSqliteCache(configuration: SqliteCacheConfiguration) {
       )`,
 		).run();
 
-		db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS key ON cache (key)`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS expires ON cache (expires)`).run();
+		db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS key ON ${escapedTableName} (key)`).run();
+		db.prepare(`CREATE INDEX IF NOT EXISTS expires ON ${escapedTableName} (expires)`).run();
 		db.prepare(
-			`CREATE INDEX IF NOT EXISTS lastAccess ON cache (lastAccess)`,
+			`CREATE INDEX IF NOT EXISTS lastAccess ON ${escapedTableName} (lastAccess)`,
 		).run();
 	})();
 
 	return {
 		db,
 		getStatement: db.prepare<GetStatementParams, GetStatementResult>(
-			`UPDATE OR IGNORE cache
+			`UPDATE OR IGNORE ${escapedTableName}
       SET lastAccess = @now
       WHERE key = @key AND (expires > @now OR expires IS NULL)
       RETURNING value, compressed`,
 		),
 		setStatement: db.prepare<SetStatementParams>(
-			`INSERT OR REPLACE INTO cache
+			`INSERT OR REPLACE INTO ${escapedTableName}
       (key, value, expires, lastAccess, compressed) VALUES (@key, @value, @expires, @now, @compressed)`,
 		),
 		deleteStatement: db.prepare<DeleteStatementParams>(
-			`DELETE FROM cache WHERE key = @key`,
+			`DELETE FROM ${escapedTableName} WHERE key = @key`,
 		),
-		clearStatement: db.prepare<Record<string, never>>(`DELETE FROM cache`),
+		clearStatement: db.prepare<Record<string, never>>(`DELETE FROM ${escapedTableName}`),
 		cleanupExpiredStatement: db.prepare<CleanupExpiredStatementParams>(
-			`DELETE FROM cache WHERE expires < @now`,
+			`DELETE FROM ${escapedTableName} WHERE expires < @now`,
 		),
 		cleanupLruStatement: db.prepare<CleanupLruStatementParams>(
-			`WITH lru AS (SELECT key FROM cache ORDER BY lastAccess DESC LIMIT -1 OFFSET @maxItems)
-      DELETE FROM cache WHERE key IN lru`,
+			`WITH lru AS (SELECT key FROM ${escapedTableName} ORDER BY lastAccess DESC LIMIT -1 OFFSET @maxItems)
+      DELETE FROM ${escapedTableName} WHERE key IN lru`,
 		),
 	};
 }

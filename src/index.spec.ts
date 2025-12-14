@@ -291,12 +291,13 @@ test("compression", async () => {
     assert.deepEqual(await cache.get("buf"), buffer);
 
     const con: Database.Database = (await (cache as any).db).db;
-    const { value, compressed } = con
+    const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get();
+      .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.equal(compressed, 1);
-    expect(value.length).lessThan(buffer.length);
+    assert.notEqual(result, undefined);
+    assert.equal(result!.compressed, 1);
+    expect(result!.value.length).lessThan(buffer.length);
   } finally {
     await cache.close();
   }
@@ -315,12 +316,13 @@ test("compression too short", async () => {
     assert.deepEqual(await cache.get("buf"), buffer);
 
     const con: Database.Database = (await (cache as any).db).db;
-    const { value, compressed } = con
+    const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get();
+      .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.equal(compressed, 0);
-    expect(value.length).gte(buffer.length);
+    assert.notEqual(result, undefined);
+    assert.equal(result!.compressed, 0);
+    expect(result!.value.length).gte(buffer.length);
   } finally {
     await cache.close();
   }
@@ -339,12 +341,13 @@ test("uncompressable", async () => {
     assert.deepEqual(await cache.get("buf"), buffer);
 
     const con: Database.Database = (await (cache as any).db).db;
-    const { value, compressed } = con
+    const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get();
+      .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.equal(compressed, 0);
-    expect(value.length).gte(buffer.length);
+    assert.notEqual(result, undefined);
+    assert.equal(result!.compressed, 0);
+    expect(result!.value.length).gte(buffer.length);
   } finally {
     await cache.close();
   }
@@ -368,5 +371,97 @@ test("use after close", async () => {
     await expect(cache.clear()).rejects.toThrow();
   } finally {
     await unlink(dbPath);
+  }
+});
+
+
+test("cacheTableName custom", async () => {
+  const cache = new SqliteCache({
+    database: ":memory:",
+    cacheTableName: "my_cache",
+  });
+
+  try {
+    await cache.set("foo", "bar");
+    assert.equal(await cache.get("foo"), "bar");
+
+    const con: Database.Database = (await (cache as any).db).db;
+    const tables = con
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='my_cache'",
+      )
+      .get();
+
+    assert.notEqual(tables, undefined);
+
+    // Verify default table doesn't exist
+    const defaultTable = con
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='cache'",
+      )
+      .get();
+
+    assert.equal(defaultTable, undefined);
+  } finally {
+    await cache.close();
+  }
+});
+
+
+test("cacheTableName multiple caches same database", async () => {
+  const dbPath = join(tmpdir(), randomUUID() + ".db");
+  const cache1 = new SqliteCache({
+    database: dbPath,
+    cacheTableName: "cache1",
+  });
+
+  const cache2 = new SqliteCache({
+    database: dbPath,
+    cacheTableName: "cache2",
+  });
+
+  try {
+    await cache1.set("foo", "bar1");
+    await cache2.set("foo", "bar2");
+
+    assert.equal(await cache1.get("foo"), "bar1");
+    assert.equal(await cache2.get("foo"), "bar2");
+
+    // Verify they don't interfere
+    await cache1.delete("foo");
+    assert.equal(await cache1.get("foo"), undefined);
+    assert.equal(await cache2.get("foo"), "bar2");
+  } finally {
+    await cache1.close();
+    await cache2.close();
+    await unlink(dbPath);
+  }
+});
+
+test("cacheTableName with double quotes", async () => {
+  const cache = new SqliteCache({
+    database: ":memory:",
+    cacheTableName: 'table"with"quotes',
+  });
+
+  try {
+    await cache.set("foo", "bar");
+    assert.equal(await cache.get("foo"), "bar");
+
+    const con: Database.Database = (await (cache as any).db).db;
+    const tables = con
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+      .get('table"with"quotes');
+
+    assert.notEqual(tables, undefined);
+
+    // Test all operations work with quotes in table name
+    await cache.set("key1", "value1");
+    assert.equal(await cache.get("key1"), "value1");
+
+    await cache.delete("key1");
+    assert.equal(await cache.get("key1"), undefined);
+  } finally {
+    await cache.close();
   }
 });
