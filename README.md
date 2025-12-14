@@ -12,6 +12,7 @@ SQLite is great for high-performance local cache. This library is perfectly viab
 - Values encoded with [CBOR](https://cbor.io/) which is like JSON, but is binary and serializes `Buffer` and `Date`
 - Inspired by [node-cache-manager-sqlite](https://github.com/maxpert/node-cache-manager-sqlite) but with easier configuration, TypeScript, LRU and compression
 - Make sure to call `await cache.close()` during graceful shutdown of your application to ensure SQLite is properly persisted to disk
+- Supports both Bun and Node.js
 
 ### Basic usage
 

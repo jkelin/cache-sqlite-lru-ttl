@@ -1,10 +1,27 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
 import { unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { assert, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import SqliteCache from ".";
+
+// Helper function to close multiple caches and optionally clean up database file
+async function cleanupCaches(
+  caches: SqliteCache[],
+  dbPath?: string
+): Promise<void> {
+  await Promise.all(caches.map((cache) => cache.close()));
+  if (dbPath) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    try {
+      await unlink(dbPath);
+    } catch (err: any) {
+      if (err.code !== "EBUSY") {
+        throw err;
+      }
+    }
+  }
+}
 
 test("memory get set", async () => {
   const cache = new SqliteCache({
@@ -13,9 +30,9 @@ test("memory get set", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -26,9 +43,9 @@ test("missing key", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("bar"), undefined);
+    expect(await cache.get("bar")).toBeUndefined();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -40,9 +57,9 @@ test("deletion", async () => {
   try {
     await cache.set("foo", "bar");
     await cache.delete("foo");
-    assert.equal(await cache.get("foo"), undefined);
+    expect(await cache.get("foo")).toBeUndefined();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -54,9 +71,9 @@ test("clear", async () => {
   try {
     await cache.set("foo", "bar");
     await cache.clear();
-    assert.equal(await cache.get("foo"), undefined);
+    expect(await cache.get("foo")).toBeUndefined();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -67,9 +84,9 @@ test("number", async () => {
 
   try {
     await cache.set("foo", 5);
-    assert.deepEqual(await cache.get("foo"), 5);
+    expect(await cache.get("foo")).toBe(5);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -80,9 +97,9 @@ test("bool", async () => {
 
   try {
     await cache.set("foo", true);
-    assert.deepEqual(await cache.get("foo"), true);
+    expect(await cache.get("foo")).toBe(true);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -93,9 +110,9 @@ test("null", async () => {
 
   try {
     await cache.set("foo", null);
-    assert.deepEqual(await cache.get("foo"), null);
+    expect(await cache.get("foo")).toBeNull();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -106,9 +123,9 @@ test("undefined", async () => {
 
   try {
     await cache.set("foo", undefined);
-    assert.deepEqual(await cache.get("foo"), undefined);
+    expect(await cache.get("foo")).toBeUndefined();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -119,9 +136,9 @@ test("array", async () => {
 
   try {
     await cache.set("foo", [1, 2, 3]);
-    assert.deepEqual(await cache.get("foo"), [1, 2, 3]);
+    expect(await cache.get("foo")).toEqual([1, 2, 3]);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -132,9 +149,9 @@ test("object", async () => {
 
   try {
     await cache.set("foo", { bar: "baz" });
-    assert.deepEqual(await cache.get("foo"), { bar: "baz" });
+    expect(await cache.get("foo")).toEqual({ bar: "baz" });
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -147,12 +164,12 @@ test("buffer", async () => {
 
   try {
     await cache.set("foo", buf);
-    assert.deepEqual(await cache.get("foo"), buf);
+    expect(await cache.get("foo")).toEqual(buf);
 
     await cache.set("foo", Buffer.from("hello world 2"));
-    assert.notDeepEqual(await cache.get("foo"), buf);
+    expect(await cache.get("foo")).not.toEqual(buf);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -176,9 +193,9 @@ test("complex object", async () => {
 
   try {
     await cache.set("foo", obj);
-    assert.deepEqual(await cache.get("foo"), obj);
+    expect(await cache.get("foo")).toEqual(obj);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -189,12 +206,12 @@ test("update key", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
 
     await cache.set("foo", "baz");
-    assert.equal(await cache.get("foo"), "baz");
+    expect(await cache.get("foo")).toBe("baz");
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -206,10 +223,9 @@ test("file get set", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
   } finally {
-    await cache.close();
-    await unlink(dbPath);
+    await cleanupCaches([cache], dbPath);
   }
 });
 
@@ -221,18 +237,18 @@ test("file close reopen", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
 
     await cache.close();
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     cache = new SqliteCache({
       database: dbPath,
     });
 
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
   } finally {
-    await cache.close();
-    await unlink(dbPath);
+    await cleanupCaches([cache], dbPath);
   }
 });
 
@@ -246,11 +262,18 @@ test("ttl", async () => {
     await cache.set("foo", "bar");
     await cache.set("expires", "bar", { ttlMs: 20 });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.equal(await cache.get("foo"), "bar");
-    assert.equal(await cache.get("expires"), undefined);
+    expect(await cache.get("foo")).toBe("bar");
+    expect(await cache.get("expires")).toBeUndefined();
   } finally {
     await cache.close();
-    await unlink(dbPath);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    try {
+      await unlink(dbPath);
+    } catch (err: any) {
+      if (err.code !== "EBUSY") {
+        throw err;
+      }
+    }
   }
 });
 
@@ -271,10 +294,10 @@ test("lru", async () => {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.equal(await cache.get("foo"), undefined);
-    assert.equal(await cache.get("xyz"), "bar");
+    expect(await cache.get("foo")).toBeUndefined();
+    expect(await cache.get("xyz")).toBe("bar");
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -288,18 +311,19 @@ test("compression", async () => {
 
   try {
     await cache.set("buf", buffer);
-    assert.deepEqual(await cache.get("buf"), buffer);
+    expect(await cache.get("buf")).toEqual(buffer);
 
-    const con: Database.Database = (await (cache as any).db).db;
+    const dbResult = await (cache as any).db;
+    const con = dbResult.db;
     const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
       .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.notEqual(result, undefined);
-    assert.equal(result!.compressed, 1);
-    expect(result!.value.length).lessThan(buffer.length);
+    expect(result).not.toBeUndefined();
+    expect(result!.compressed).toBe(1);
+    expect(result!.value.length).toBeLessThan(buffer.length);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -313,18 +337,19 @@ test("compression too short", async () => {
 
   try {
     await cache.set("buf", buffer);
-    assert.deepEqual(await cache.get("buf"), buffer);
+    expect(await cache.get("buf")).toEqual(buffer);
 
-    const con: Database.Database = (await (cache as any).db).db;
+    const dbResult = await (cache as any).db;
+    const con = dbResult.db;
     const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
       .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.notEqual(result, undefined);
-    assert.equal(result!.compressed, 0);
-    expect(result!.value.length).gte(buffer.length);
+    expect(result).not.toBeUndefined();
+    expect(result!.compressed).toBe(0);
+    expect(result!.value.length).toBeGreaterThanOrEqual(buffer.length);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -338,18 +363,19 @@ test("uncompressable", async () => {
 
   try {
     await cache.set("buf", buffer);
-    assert.deepEqual(await cache.get("buf"), buffer);
+    expect(await cache.get("buf")).toEqual(buffer);
 
-    const con: Database.Database = (await (cache as any).db).db;
+    const dbResult = await (cache as any).db;
+    const con = dbResult.db;
     const result = con
       .prepare("SELECT value, compressed FROM cache LIMIT 1")
       .get() as { value: Buffer; compressed: number } | undefined;
 
-    assert.notEqual(result, undefined);
-    assert.equal(result!.compressed, 0);
-    expect(result!.value.length).gte(buffer.length);
+    expect(result).not.toBeUndefined();
+    expect(result!.compressed).toBe(0);
+    expect(result!.value.length).toBeGreaterThanOrEqual(buffer.length);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
 
@@ -361,19 +387,20 @@ test("use after close", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
 
     await cache.close();
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     await expect(cache.get("foo")).rejects.toThrow();
     await expect(cache.set("foo", "bar")).rejects.toThrow();
     await expect(cache.delete("foo")).rejects.toThrow();
     await expect(cache.clear()).rejects.toThrow();
   } finally {
-    await unlink(dbPath);
+    // Cache is already closed in the test, just clean up the file
+    await cleanupCaches([cache], dbPath);
   }
 });
-
 
 test("cacheTableName custom", async () => {
   const cache = new SqliteCache({
@@ -383,30 +410,32 @@ test("cacheTableName custom", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
 
-    const con: Database.Database = (await (cache as any).db).db;
+    const dbResult = await (cache as any).db;
+    const con = dbResult.db;
     const tables = con
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='my_cache'",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='my_cache'"
       )
       .get();
 
-    assert.notEqual(tables, undefined);
+    // better-sqlite3 returns undefined, bun:sqlite returns null for no results
+    expect(tables != null).toBe(true);
 
     // Verify default table doesn't exist
+    // better-sqlite3 returns undefined, bun:sqlite returns null for no results
     const defaultTable = con
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='cache'",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='cache'"
       )
       .get();
 
-    assert.equal(defaultTable, undefined);
+    expect(defaultTable == null).toBe(true);
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
-
 
 test("cacheTableName multiple caches same database", async () => {
   const dbPath = join(tmpdir(), randomUUID() + ".db");
@@ -424,17 +453,15 @@ test("cacheTableName multiple caches same database", async () => {
     await cache1.set("foo", "bar1");
     await cache2.set("foo", "bar2");
 
-    assert.equal(await cache1.get("foo"), "bar1");
-    assert.equal(await cache2.get("foo"), "bar2");
+    expect(await cache1.get("foo")).toBe("bar1");
+    expect(await cache2.get("foo")).toBe("bar2");
 
     // Verify they don't interfere
     await cache1.delete("foo");
-    assert.equal(await cache1.get("foo"), undefined);
-    assert.equal(await cache2.get("foo"), "bar2");
+    expect(await cache1.get("foo")).toBeUndefined();
+    expect(await cache2.get("foo")).toBe("bar2");
   } finally {
-    await cache1.close();
-    await cache2.close();
-    await unlink(dbPath);
+    await cleanupCaches([cache1, cache2], dbPath);
   }
 });
 
@@ -446,22 +473,24 @@ test("cacheTableName with double quotes", async () => {
 
   try {
     await cache.set("foo", "bar");
-    assert.equal(await cache.get("foo"), "bar");
+    expect(await cache.get("foo")).toBe("bar");
 
-    const con: Database.Database = (await (cache as any).db).db;
+    const dbResult = await (cache as any).db;
+    const con = dbResult.db;
     const tables = con
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
       .get('table"with"quotes');
 
-    assert.notEqual(tables, undefined);
+    // better-sqlite3 returns undefined, bun:sqlite returns null for no results
+    expect(tables != null).toBe(true);
 
     // Test all operations work with quotes in table name
     await cache.set("key1", "value1");
-    assert.equal(await cache.get("key1"), "value1");
+    expect(await cache.get("key1")).toBe("value1");
 
     await cache.delete("key1");
-    assert.equal(await cache.get("key1"), undefined);
+    expect(await cache.get("key1")).toBeUndefined();
   } finally {
-    await cache.close();
+    await cleanupCaches([cache]);
   }
 });
