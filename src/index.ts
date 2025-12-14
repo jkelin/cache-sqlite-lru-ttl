@@ -159,7 +159,7 @@ async function initSqliteCache(configuration: SqliteCacheConfiguration) {
       WHERE key IN (
         SELECT key FROM ${escapedTableName}
         ORDER BY lastAccess ASC
-        LIMIT (SELECT COUNT(*) - @maxItems FROM ${escapedTableName})
+        LIMIT MAX(0, (SELECT COUNT(*) - @maxItems FROM ${escapedTableName}))
       )`
     ) as any as {
       run(params: CleanupLruStatementParams): void;

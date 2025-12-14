@@ -494,3 +494,31 @@ test("cacheTableName with double quotes", async () => {
     await cleanupCaches([cache]);
   }
 });
+
+test("lru cleanup should not clear table when items less than maxItems", async () => {
+  const cache = new SqliteCache({
+    database: ":memory:",
+    maxItems: 5,
+  });
+
+  try {
+    // Add 3 items (less than maxItems = 5)
+    await cache.set("item1", "value1");
+    await cache.set("item2", "value2");
+    await cache.set("item3", "value3");
+
+    // Trigger cleanup by adding another item (which calls checkForExpiredItems)
+    await cache.set("item4", "value4");
+
+    // Wait for cleanup to complete (debounce is 100ms, plus some buffer)
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // All items should still be present since we have less than maxItems
+    expect(await cache.get("item1")).toBe("value1");
+    expect(await cache.get("item2")).toBe("value2");
+    expect(await cache.get("item3")).toBe("value3");
+    expect(await cache.get("item4")).toBe("value4");
+  } finally {
+    await cleanupCaches([cache]);
+  }
+});
