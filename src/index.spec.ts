@@ -1,10 +1,10 @@
-import { assert, expect, test } from "vitest";
-import { join } from "path";
-import { tmpdir } from "os";
+import { randomBytes, randomUUID } from "node:crypto";
+import type Database from "better-sqlite3";
 import { unlink } from "fs/promises";
-import { randomUUID, randomBytes } from "node:crypto";
+import { tmpdir } from "os";
+import { join } from "path";
+import { assert, expect, test } from "vitest";
 import SqliteCache from ".";
-import Database from "better-sqlite3";
 
 test("memory get set", async () => {
   const cache = new SqliteCache({
