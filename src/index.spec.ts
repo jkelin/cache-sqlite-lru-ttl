@@ -12,12 +12,21 @@ async function cleanupCaches(
 ): Promise<void> {
   await Promise.all(caches.map((cache) => cache.close()));
   if (dbPath) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    try {
-      await unlink(dbPath);
-    } catch (err: any) {
-      if (err.code !== "EBUSY") {
-        throw err;
+    // cleanup database files including shm and wal files
+    for (const file of [dbPath, dbPath + "-shm", dbPath + "-wal"]) {
+      // wait for file to be released
+      for (let i = 0; i < 10; i++) {
+        try {
+          await unlink(file);
+        } catch (err: any) {
+          if (err.code === "EBUSY") {
+            console.log(`waiting for file ${file} to be released`);
+            await new Promise((resolve) => setTimeout(resolve, i * 10));
+          }
+          else if (err.code !== "ENOENT") {
+            throw err;
+          }
+        }
       }
     }
   }
@@ -315,9 +324,11 @@ test("compression", async () => {
 
     const dbResult = await (cache as any).db;
     const con = dbResult.db;
-    const result = con
-      .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get() as { value: Buffer; compressed: number } | undefined;
+    const statement = con.prepare("SELECT value, compressed FROM cache LIMIT 1");
+    const result = statement.get() as
+      | { value: Buffer; compressed: number }
+      | undefined;
+    statement.finalize?.();
 
     expect(result).not.toBeUndefined();
     expect(result!.compressed).toBe(1);
@@ -341,9 +352,11 @@ test("compression too short", async () => {
 
     const dbResult = await (cache as any).db;
     const con = dbResult.db;
-    const result = con
-      .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get() as { value: Buffer; compressed: number } | undefined;
+    const statement = con.prepare("SELECT value, compressed FROM cache LIMIT 1");
+    const result = statement.get() as
+      | { value: Buffer; compressed: number }
+      | undefined;
+    statement.finalize?.();
 
     expect(result).not.toBeUndefined();
     expect(result!.compressed).toBe(0);
@@ -367,9 +380,11 @@ test("uncompressable", async () => {
 
     const dbResult = await (cache as any).db;
     const con = dbResult.db;
-    const result = con
-      .prepare("SELECT value, compressed FROM cache LIMIT 1")
-      .get() as { value: Buffer; compressed: number } | undefined;
+    const statement = con.prepare("SELECT value, compressed FROM cache LIMIT 1");
+    const result = statement.get() as
+      | { value: Buffer; compressed: number }
+      | undefined;
+    statement.finalize?.();
 
     expect(result).not.toBeUndefined();
     expect(result!.compressed).toBe(0);
@@ -414,22 +429,22 @@ test("cacheTableName custom", async () => {
 
     const dbResult = await (cache as any).db;
     const con = dbResult.db;
-    const tables = con
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='my_cache'"
-      )
-      .get();
+    const statementCustomTable = con.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='my_cache'"
+    );
+    const tables = statementCustomTable.get();
+    statementCustomTable.finalize?.();
 
     // better-sqlite3 returns undefined, bun:sqlite returns null for no results
     expect(tables != null).toBe(true);
 
     // Verify default table doesn't exist
     // better-sqlite3 returns undefined, bun:sqlite returns null for no results
-    const defaultTable = con
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='cache'"
-      )
-      .get();
+    const statementDefaultTable = con.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='cache'"
+    );
+    const defaultTable = statementDefaultTable.get();
+    statementDefaultTable.finalize?.();
 
     expect(defaultTable == null).toBe(true);
   } finally {
@@ -477,9 +492,11 @@ test("cacheTableName with double quotes", async () => {
 
     const dbResult = await (cache as any).db;
     const con = dbResult.db;
-    const tables = con
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-      .get('table"with"quotes');
+    const statement = con.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+    );
+    const tables = statement.get('table"with"quotes');
+    statement.finalize?.();
 
     // better-sqlite3 returns undefined, bun:sqlite returns null for no results
     expect(tables != null).toBe(true);

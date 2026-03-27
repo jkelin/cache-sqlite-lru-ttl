@@ -193,6 +193,8 @@ export class SqliteCache<TData = unknown> {
   private readonly db: ReturnType<typeof initSqliteCache>;
   private readonly checkInterval: Timer;
   private isClosed: boolean = false;
+  private pendingOperations: number = 0;
+  private pendingDrainResolvers: Set<() => void> = new Set();
 
   constructor(private readonly configuration: SqliteCacheConfiguration) {
     const config = configurationSchema.parse(configuration);
@@ -201,69 +203,72 @@ export class SqliteCache<TData = unknown> {
   }
 
   /**
-   * Get cache item by it's key.
+   * Get a cache item by its key.
    */
   public async get<T = TData>(key: string): Promise<T | undefined> {
-    if (this.isClosed) {
-      throw new Error("Cache is closed");
-    }
+    return this.runTrackedOperation(async () => {
+      if (this.isClosed) {
+        throw new Error("Cache is closed");
+      }
 
-    const res = (await this.db).getStatement.get({
-      key,
-      now: now(),
+      const res = (await this.db).getStatement.get({
+        key,
+        now: now(),
+      });
+
+      if (!res) {
+        return undefined;
+      }
+
+      let value: Buffer = res.value;
+
+      if (res.compressed) {
+        value = await decompress(value);
+      }
+
+      return cbor.decode(value);
     });
-
-    if (!res) {
-      return undefined;
-    }
-
-    let value: Buffer = res.value;
-
-    if (res.compressed) {
-      value = await decompress(value);
-    }
-
-    return cbor.decode(value);
   }
 
   /**
-   * Updates cache item by key or creates new one if it doesn't exist.
+   * Update a cache item by key, or create one if it does not exist.
    */
   public async set<T = TData>(
     key: string,
     value: T,
     opts: { ttlMs?: number; compress?: boolean } = {}
   ) {
-    if (this.isClosed) {
-      throw new Error("Cache is closed");
-    }
-
-    const ttl = opts.ttlMs ?? this.configuration.defaultTtlMs;
-    const expires = ttl !== undefined ? new Date(Date.now() + ttl) : undefined;
-
-    let compression = opts.compress ?? this.configuration.compress ?? false;
-
-    let valueBuffer = cbor.encode(value);
-
-    if (compression && valueBuffer.length >= COMPRESSION_MIN_LENGTH) {
-      const compressed = await compress(valueBuffer);
-      if (compressed.length >= valueBuffer.length) {
-        compression = false;
-      } else {
-        valueBuffer = compressed;
+    await this.runTrackedOperation(async () => {
+      if (this.isClosed) {
+        throw new Error("Cache is closed");
       }
-    } else {
-      compression = false;
-    }
 
-    (await this.db).setStatement.run({
-      key,
-      value: valueBuffer,
-      expires: expires?.getTime() ?? null,
-      compressed: compression ? 1 : 0,
-      now: now(),
+      const ttl = opts.ttlMs ?? this.configuration.defaultTtlMs;
+      const expires = ttl !== undefined ? new Date(Date.now() + ttl) : undefined;
+
+      let compression = opts.compress ?? this.configuration.compress ?? false;
+
+      let valueBuffer = cbor.encode(value);
+
+      if (compression && valueBuffer.length >= COMPRESSION_MIN_LENGTH) {
+        const compressed = await compress(valueBuffer);
+        if (compressed.length >= valueBuffer.length) {
+          compression = false;
+        } else {
+          valueBuffer = compressed;
+        }
+      } else {
+        compression = false;
+      }
+
+      (await this.db).setStatement.run({
+        key,
+        value: valueBuffer,
+        expires: expires?.getTime() ?? null,
+        compressed: compression ? 1 : 0,
+        now: now(),
+      });
     });
-
     setImmediate(this.checkForExpiredItems.bind(this));
   }
 
@@ -271,26 +276,30 @@ export class SqliteCache<TData = unknown> {
    * Remove specific item from the cache.
    */
   public async delete(key: string) {
-    if (this.isClosed) {
-      throw new Error("Cache is closed");
-    }
+    await this.runTrackedOperation(async () => {
+      if (this.isClosed) {
+        throw new Error("Cache is closed");
+      }
 
-    (await this.db).deleteStatement.run({ key });
+      (await this.db).deleteStatement.run({ key });
+    });
   }
 
   /**
    * Remove all items from the cache.
    */
   public async clear() {
-    if (this.isClosed) {
-      throw new Error("Cache is closed");
-    }
+    await this.runTrackedOperation(async () => {
+      if (this.isClosed) {
+        throw new Error("Cache is closed");
+      }
 
-    (await this.db).clearStatement.run({});
+      (await this.db).clearStatement.run({});
+    });
   }
 
   /**
-   * Close database and cleanup resources.
+   * Close the database and clean up resources.
    */
   public async close() {
     if (this.isClosed) {
@@ -298,36 +307,84 @@ export class SqliteCache<TData = unknown> {
     }
     this.isClosed = true;
     clearInterval(this.checkInterval);
-    // Ensure any pending cleanup operations complete
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Wait for in-flight reads/writes/maintenance to finish before strict close.
+    await this.waitForPendingOperations();
+    await this.finalizePreparedStatements();
     (await this.db).db.close();
   }
 
   private checkForExpiredItems = debounce(
     async () => {
-      if (this.isClosed) {
-        return;
-      }
-
-      try {
-        const db = await this.db;
-        db.cleanupExpiredStatement.run({ now: now() });
-
-        if (this.configuration.maxItems) {
-          db.cleanupLruStatement.run({
-            maxItems: this.configuration.maxItems,
-          });
+      await this.runTrackedOperation(async () => {
+        if (this.isClosed) {
+          return;
         }
-      } catch (ex) {
-        console.error(
-          "Error in cache-sqlite-lru-ttl when checking for expired items",
-          ex
-        );
-      }
+
+        try {
+          const db = await this.db;
+          db.cleanupExpiredStatement.run({ now: now() });
+
+          if (this.configuration.maxItems) {
+            db.cleanupLruStatement.run({
+              maxItems: this.configuration.maxItems,
+            });
+          }
+        } catch (ex) {
+          console.error(
+            "Error in cache-sqlite-lru-ttl when checking for expired items",
+            ex
+          );
+        }
+      });
     },
     100,
     { immediate: true }
   );
+
+  private async runTrackedOperation<T>(operation: () => Promise<T>): Promise<T> {
+    this.pendingOperations += 1;
+    try {
+      return await operation();
+    } finally {
+      this.pendingOperations -= 1;
+      if (this.pendingOperations === 0) {
+        for (const resolve of this.pendingDrainResolvers) {
+          resolve();
+        }
+        this.pendingDrainResolvers.clear();
+      }
+    }
+  }
+
+  private async waitForPendingOperations(): Promise<void> {
+    if (this.pendingOperations === 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.pendingDrainResolvers.add(resolve);
+    });
+  }
+
+  private async finalizePreparedStatements(): Promise<void> {
+    const dbState = await this.db;
+    const statements = [
+      dbState.getStatement,
+      dbState.setStatement,
+      dbState.deleteStatement,
+      dbState.clearStatement,
+      dbState.cleanupExpiredStatement,
+      dbState.cleanupLruStatement,
+    ];
+
+    // Bun requires statements to be finalized before strict close(true).
+    for (const statement of statements) {
+      const maybeFinalize = (statement as { finalize?: () => void }).finalize;
+      if (typeof maybeFinalize === "function") {
+        maybeFinalize.call(statement);
+      }
+    }
+  }
 }
 
 export default SqliteCache;
