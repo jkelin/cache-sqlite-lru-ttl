@@ -104,6 +104,20 @@ async function initSqliteCache(configuration: SqliteCacheConfiguration) {
     type === "bun"
       ? new Database(configuration.database, { strict: true })
       : new Database(configuration.database);
+
+  // Enable WAL mode for file-based databases. Without WAL, every write
+  // (including cache.get() which updates lastAccess) triggers two fsyncs via
+  // the rollback journal. Under concurrent load from multiple processes this
+  // serialises on the write lock — each waiter blocks its Node.js event loop
+  // for the full busy-timeout duration, producing 200-500 ms stalls.
+  // WAL + synchronous=NORMAL writes append to the WAL file with no per-write
+  // fsync, reducing individual write latency by ~10-15× and eliminating the
+  // contention-cascade that causes those stalls.
+  if (configuration.database !== ":memory:") {
+    db.exec("PRAGMA journal_mode=WAL");
+    db.exec("PRAGMA synchronous=NORMAL");
+  }
+
   const cacheTableName = configuration.cacheTableName ?? "cache";
   const escapedTableName = escapeIdentifier(cacheTableName);
 
